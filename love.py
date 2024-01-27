@@ -36,8 +36,10 @@ def miner_thread(xblockheader, difficult):
     nonce_and_hash = tdc_mine.miner_thread(xblockheader, difficult, nonce)
     return nonce_and_hash
 
-def worker(xblockheader, payload1, payload2, bdiff, sock, number):
+def worker(xblockheader, payload1, payload2, bdiff, host, port, number):
     try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((host, port))
         while 1:
             z = miner_thread(xblockheader, bdiff)
             sock.sendall(payload1 + z[:8] + payload2)
@@ -45,17 +47,12 @@ def worker(xblockheader, payload1, payload2, bdiff, sock, number):
         print("Pipe broken")
         sock.close()
         time.sleep(4)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((host, port))
-        print("Socket reconnected")
-        sock.sendall(b'{"id": 1, "method": "mining.subscribe", "params": ["pytideminer-1.0.0"]}\n')
-        lines = sock.recv(1024).decode().split('\n')
-        response = json.loads(lines[0])
-        sub_details, extranonce1, extranonce2_size = response['result']
-        extranonce2 = '00' * extranonce2_size
-        sock.sendall(b'{"params": ["' + address.encode() + b'", "' + password.encode() + b'"], "id": 2, "method": "mining.authorize"}\n')
-        print("Mining authorize")
-        worker(xblockheader, payload1, payload2, bdiff, sock, number)
+        worker(xblockheader, payload1, payload2, bdiff, host, port, number)
+    except Exception as e:
+        print(f"Error in worker: {e}")
+        sock.close()
+        time.sleep(4)
+        worker(xblockheader, payload1, payload2, bdiff, host, port, number)
 
 def miner(address, host, port, cpu_count=cpu_count(), password='password'):
     print("address:{}".format(address))
@@ -125,7 +122,7 @@ def miner(address, host, port, cpu_count=cpu_count(), password='password'):
                         "UTF-8")
                     payload2 = bytes('"], "id": 4, "method": "mining.submit"}\n', "UTF-8")
                     for number in range(count):
-                        proc = Process(target=worker, args=(xblockheader, payload1, payload2, bdiff, sock, number + 1))
+                        proc = Process(target=worker, args=(xblockheader, payload1, payload2, bdiff, host, port, number + 1))
                         proc.daemon = True
                         procs.append(proc)
                         proc.start()
@@ -159,7 +156,6 @@ def miner(address, host, port, cpu_count=cpu_count(), password='password'):
             pass
         print("Connection refused, restart after 30 s")
         time.sleep(30)
-        miner(address, host, port, cpu_count, password)
 
 if __name__ == "__main__":
     import argparse
